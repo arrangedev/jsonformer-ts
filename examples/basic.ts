@@ -1,14 +1,24 @@
-import { LlamaForCausalLM, LlamaTokenizer } from "@xenova/transformers";
+import {
+  AutoModelForCausalLM,
+  AutoTokenizer,
+  LlamaForCausalLM,
+  LlamaTokenizer,
+} from "@xenova/transformers";
 import { Jsonformer } from "../src/index.js";
 
 async function main() {
   console.log("Loading model and tokenizer...");
   const model = await LlamaForCausalLM.from_pretrained(
-    "onnx-community/Llama-3.2-1B-Instruct",
-    { model_file_name: "model" },
+    "Xenova/TinyLlama-1.1B-Chat-v1.0",
+    {
+      progress_callback: (progress: any) => {
+        console.log(`Loading model: ${progress.progress}%`);
+      },
+    },
   );
+
   const tokenizer = await LlamaTokenizer.from_pretrained(
-    "onnx-community/Llama-3.2-1B-Instruct",
+    "Xenova/TinyLlama-1.1B-Chat-v1.0",
   );
 
   const schema = {

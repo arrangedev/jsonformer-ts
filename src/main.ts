@@ -1,4 +1,8 @@
-import { PreTrainedModel, PreTrainedTokenizer } from "@xenova/transformers";
+import {
+  PreTrainedModel,
+  PreTrainedTokenizer,
+  Tensor,
+} from "@xenova/transformers";
 import {
   NumberStoppingCriteria,
   OutputNumbersTokens,
@@ -74,25 +78,27 @@ export class Jsonformer {
       add_special_tokens: true,
     });
 
-    const response = await this.model.generate(inputTokens, {
+    const inputData = inputTokens.map(BigInt);
+    const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
+
+    const response = await this.model.generate(inputTensor, {
       max_new_tokens: this.options.maxNumberTokens,
       num_return_sequences: 1,
-      logits_processor: [this.numberLogitProcessor],
+      logits_processor: this.numberLogitProcessor,
       stopping_criteria: [
-        new NumberStoppingCriteria(this.tokenizer, inputTokens.length),
+        new NumberStoppingCriteria(this.tokenizer, inputTokens[0]),
       ],
       temperature: temperature || this.options.temperature,
       pad_token_id: this.tokenizer.pad_token_id,
+      do_sample: true,
     });
 
-    const result = this.tokenizer.decode(response, {
+    const newTokens = response[0].slice(inputTokens.length);
+    const result = this.tokenizer.decode(newTokens, {
       skip_special_tokens: true,
     });
 
-    const processedResult = result
-      .slice(prompt.length)
-      .trim()
-      .replace(/\.$/, "");
+    const processedResult = result.trim().replace(/\.$/, "");
     this.debug("[generate_number]", processedResult);
 
     try {
@@ -112,12 +118,27 @@ export class Jsonformer {
     const prompt = this.getPrompt();
     this.debug("[generate_boolean]", prompt, true);
 
-    const inputTensor = this.tokenizer.encode(prompt, null, {
+    const inputTokens = this.tokenizer.encode(prompt, null, {
       add_special_tokens: true,
+      return_token_type_ids: true,
     });
 
-    const output = await this.model.forward(inputTensor);
-    const logits = output.logits.get(output.logits.length - 1);
+    const inputData = inputTokens.map(BigInt);
+    const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
+
+    const attentionMask = new Tensor(
+      "int64",
+      Array(inputTokens.length).fill(BigInt(1)),
+      [1, inputTokens.length],
+    );
+
+    const output = await this.model.forward({
+      input_ids: inputTensor,
+      attention_mask: attentionMask,
+    });
+
+    const logits = output.logits;
+    const lastTokenLogits = logits.data.slice(-logits.dims[2]);
 
     const trueTokens = this.tokenizer.encode("true", null, {
       add_special_tokens: false,
@@ -126,7 +147,10 @@ export class Jsonformer {
       add_special_tokens: false,
     });
 
-    const result = logits.get(trueTokens[0]) > logits.get(falseTokens[0]);
+    const trueLogit = lastTokenLogits[trueTokens[0]];
+    const falseLogit = lastTokenLogits[falseTokens[0]];
+
+    const result = trueLogit > falseLogit;
     this.debug("[generate_boolean]", String(result));
 
     return result;
@@ -140,24 +164,32 @@ export class Jsonformer {
       add_special_tokens: true,
     });
 
-    const response = await this.model.generate(inputTokens, {
+    const inputData = inputTokens.map(BigInt);
+    const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
+
+    const response = await this.model.generate(inputTensor, {
       max_new_tokens: this.options.maxStringTokenLength,
       num_return_sequences: 1,
-      temperature: this.options.temperature,
       stopping_criteria: [
-        new StringStoppingCriteria(this.tokenizer, inputTokens.length),
+        new StringStoppingCriteria(this.tokenizer, inputTokens[0]),
       ],
+      temperature: this.options.temperature,
       pad_token_id: this.tokenizer.pad_token_id,
+      do_sample: true,
     });
 
-    const decodedResponse = this.tokenizer.decode(response, {
+    let finalResponse = response[0];
+
+    finalResponse = finalResponse.slice(inputTokens.length);
+
+    const decodedResponse = this.tokenizer.decode(finalResponse, {
       skip_special_tokens: true,
     });
 
     this.debug("[generate_string]", `|${decodedResponse}|`);
 
     if (!decodedResponse.includes('"')) {
-      return decodedResponse;
+      return decodedResponse.trim();
     }
 
     return decodedResponse.split('"')[0].trim();
@@ -256,48 +288,65 @@ export class Jsonformer {
       const inputPrompt = this.getPrompt();
       obj.pop();
 
-      const inputTensor = this.tokenizer.encode(inputPrompt, null, {
+      const inputTokens = this.tokenizer.encode(inputPrompt, null, {
         add_special_tokens: true,
+        return_token_type_ids: true,
       });
 
-      const output = await this.model.forward(inputTensor);
-      const logits = output.logits.get(output.logits.length - 1);
+      const inputData = inputTokens.map(BigInt);
+      const inputTensor = new Tensor("int64", inputData, [
+        1,
+        inputTokens.length,
+      ]);
+
+      const attentionMask = new Tensor(
+        "int64",
+        Array(inputTokens.length).fill(BigInt(1)),
+        [1, inputTokens.length],
+      );
+
+      const output = await this.model.forward({
+        input_ids: inputTensor,
+        attention_mask: attentionMask,
+      });
+
+      const logits = output.logits;
+      const lastTokenLogits = logits.data.slice(-logits.dims[2]);
 
       const topK = 30;
-      const topValues = new Array(topK).fill(-Infinity);
-      const topIndices = new Array(topK).fill(0);
-
-      for (let i = 0; i < logits.length; i++) {
-        const value = logits.get(i);
-        let pos = topK - 1;
-        while (pos >= 0 && value > topValues[pos]) {
-          if (pos < topK - 1) {
-            topValues[pos + 1] = topValues[pos];
-            topIndices[pos + 1] = topIndices[pos];
-          }
-          pos--;
-        }
-        if (pos < topK - 1) {
-          topValues[pos + 1] = value;
-          topIndices[pos + 1] = i;
-        }
-      }
+      const tokenScores = lastTokenLogits.map(
+        (score: number, index: number) => ({
+          score,
+          index,
+        }),
+      );
+      const sortedTokens = tokenScores
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK);
 
       let foundComma = false;
       let foundCloseBracket = false;
 
-      for (const tokenId of topIndices) {
-        const decodedToken = this.tokenizer.decode([tokenId], {
-          skip_special_tokens: true,
-        });
+      for (const { index } of sortedTokens) {
+        try {
+          const tokenId = Math.floor(index);
+          if (Number.isInteger(tokenId) && tokenId >= 0) {
+            const decodedToken = this.tokenizer.decode([tokenId], {
+              skip_special_tokens: false,
+            });
 
-        if (decodedToken.includes(",")) {
-          foundComma = true;
-          break;
-        }
-        if (decodedToken.includes("]")) {
-          foundCloseBracket = true;
-          break;
+            if (decodedToken.includes(",")) {
+              foundComma = true;
+              break;
+            }
+            if (decodedToken.includes("]")) {
+              foundCloseBracket = true;
+              break;
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to decode token at index ${index}`, error);
+          continue;
         }
       }
 
