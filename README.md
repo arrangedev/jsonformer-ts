@@ -1,5 +1,13 @@
-# jsonformer-ts 
-A Typescript port of [Jsonformer](https://github.com/1rgs/jsonformer).
+<h1 align="center">jsonformer-ts</h1>
+<div align="center">
+  <h3>A Typescript port of <a href="https://github.com/1rgs/jsonformer">Jsonformer</a>.</h3>
+</div>
+<div align="center">
+  <a href="https://www.npmjs.com/package/@arrangedev/jsonformer-ts" target="_blank">
+    <img src="https://img.shields.io/npm/v/@arrangedev/jsonformer-ts">
+  </a>
+  <img src="https://badgen.net/badge/contributions/open/orange">
+</div>
 
 ## Overview
 This is a port of the Jsonformer library originally written in Python. This repo aims to replicate it as close as possible, allowing Typescript developers to take advantage of high-quality structured JSON outputs from language models. 
