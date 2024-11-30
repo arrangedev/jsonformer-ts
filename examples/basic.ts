@@ -1,9 +1,4 @@
-import {
-  AutoModelForCausalLM,
-  AutoTokenizer,
-  LlamaForCausalLM,
-  LlamaTokenizer,
-} from "@xenova/transformers";
+import { LlamaForCausalLM, LlamaTokenizer } from "@xenova/transformers";
 import { Jsonformer } from "../src/index.js";
 
 async function main() {

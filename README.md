@@ -28,11 +28,11 @@ Here's a basic example of `jsonformer-ts` in action:
 async function main() {
   console.log("Loading model and tokenizer...");
   const model = await LlamaForCausalLM.from_pretrained(
-    "onnx-community/Llama-3.2-1B-Instruct",
+    "Xenova/TinyLlama-1.1B-Chat-v1.0",
     { model_file_name: "model" },
   );
   const tokenizer = await LlamaTokenizer.from_pretrained(
-    "onnx-community/Llama-3.2-1B-Instruct",
+    "Xenova/TinyLlama-1.1B-Chat-v1.0",
   );
 
   const schema = {
