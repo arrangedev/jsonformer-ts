@@ -2,7 +2,7 @@
 A Typescript port of Jsonformer.
 
 ## Overview
-This is a close port of Jsonformer, originally written in Python. This repo aims to replicate it as close as possible, allowing Typescript developers to take advantage of high-quality structured JSON outputs from language models. 
+This is a port of the Jsonformer library originally written in Python. This repo aims to replicate it as close as possible, allowing Typescript developers to take advantage of high-quality structured JSON outputs from language models. 
 
 Like the original, the following schema types are supported:
 - number
