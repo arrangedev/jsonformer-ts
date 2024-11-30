@@ -321,7 +321,7 @@ export class Jsonformer {
         }),
       );
       const sortedTokens = tokenScores
-        .sort((a, b) => b.score - a.score)
+        .sort((a: any, b: any) => b.score - a.score)
         .slice(0, topK);
 
       let foundComma = false;
