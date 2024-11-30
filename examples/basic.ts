@@ -1,13 +1,16 @@
+import ora from "ora";
 import { LlamaForCausalLM, LlamaTokenizer } from "@xenova/transformers";
 import { Jsonformer } from "../src/index.js";
 
 async function main() {
-  console.log("Loading model and tokenizer...");
+  const spinner = ora({ text: "Initializing model: 0%" }).start();
+
   const model = await LlamaForCausalLM.from_pretrained(
     "Xenova/TinyLlama-1.1B-Chat-v1.0",
     {
       progress_callback: (progress: any) => {
-        console.log(`Loading model: ${progress.progress}%`);
+        if (!progress.progress) return;
+        spinner.text = `Initializing Model: ${progress.progress}%`;
       },
     },
   );
@@ -32,15 +35,15 @@ async function main() {
   const prompt =
     "Generate a person's information based on the following schema:";
 
-  console.log("Creating Jsonformer instance...");
+  spinner.text = "Creating Jsonformer Instance...";
   const jsonformer = new Jsonformer(model, tokenizer, schema, prompt, {
-    debug: true,
+    debug: false,
   });
 
-  console.log("Generating data...");
+  spinner.text = "Generating...";
   const result = await jsonformer.generate();
 
-  console.log("\nGenerated result:");
+  spinner.succeed("Result successfully generated:");
   console.log(JSON.stringify(result, null, 2));
 }
 
