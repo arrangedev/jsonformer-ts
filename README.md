@@ -1,5 +1,5 @@
 # jsonformer-ts 
-A Typescript port of Jsonformer.
+A Typescript port of [Jsonformer](https://github.com/1rgs/jsonformer).
 
 ## Overview
 This is a port of the Jsonformer library originally written in Python. This repo aims to replicate it as close as possible, allowing Typescript developers to take advantage of high-quality structured JSON outputs from language models. 
@@ -68,3 +68,6 @@ Run the example with:
 ```bash
 yarn example:basic
 ```
+
+## License
+This project is MIT licensed, like the original. See [here](https://github.com/1rgs/jsonformer?tab=MIT-1-ov-file#readme) for more information.
