@@ -1,4 +1,9 @@
-import { PreTrainedTokenizer } from "@xenova/transformers";
+import { Callable } from "./utils.js";
+import {
+  LogitsProcessor,
+  PreTrainedTokenizer,
+  Tensor,
+} from "@huggingface/transformers";
 
 interface TensorLike {
   data: Float32Array | Int32Array | number[];
@@ -9,18 +14,16 @@ interface TensorLike {
   length: number;
 }
 
-export class StringStoppingCriteria {
+export class StringStoppingCriteria extends Callable {
   constructor(
     private tokenizer: PreTrainedTokenizer,
-    private promptLength: number,
-  ) {}
+    public promptLength: number,
+  ) {
+    super();
+  }
 
-  invoke(inputIds: TensorLike, _scores?: TensorLike): boolean {
-    if (inputIds.length <= this.promptLength) {
-      return false;
-    }
-
-    const lastTokenId = inputIds.get(inputIds.length - 1);
+  _call(inputIds: bigint[][], _scores?: TensorLike): boolean {
+    const lastTokenId = Number(inputIds[0][inputIds[0].length - 1]);
     const lastToken = this.tokenizer.decode([lastTokenId], {
       skip_special_tokens: true,
     });
@@ -29,14 +32,16 @@ export class StringStoppingCriteria {
   }
 }
 
-export class NumberStoppingCriteria {
+export class NumberStoppingCriteria extends Callable {
   constructor(
     private tokenizer: PreTrainedTokenizer,
     private promptLength: number,
     private precision: number = 3,
-  ) {}
+  ) {
+    super();
+  }
 
-  invoke(inputIds: TensorLike, _scores?: TensorLike): boolean {
+  _call(inputIds: TensorLike, _scores?: TensorLike): boolean {
     const relevantIds = [];
     for (let i = this.promptLength; i < inputIds.length; i++) {
       relevantIds.push(inputIds.get(i));
@@ -69,7 +74,7 @@ export class NumberStoppingCriteria {
   }
 }
 
-export class OutputNumbersTokens {
+export class OutputNumbersTokens extends LogitsProcessor {
   private allowedMask: boolean[];
   private vocabSize: number;
 
@@ -77,12 +82,11 @@ export class OutputNumbersTokens {
     private tokenizer: PreTrainedTokenizer,
     _prompt: string,
   ) {
+    super();
     this.vocabSize = this.tokenizer.model.config.vocab_size;
     this.allowedMask = new Array(this.vocabSize).fill(false);
 
-    const tokenIds = Array.from({ length: this.vocabSize }, (_, i) => i);
-
-    tokenIds.forEach(async (tokenId) => {
+    for (let tokenId = 0; tokenId < this.vocabSize; tokenId++) {
       const tokenStr = this.tokenizer
         .decode([tokenId], {
           skip_special_tokens: true,
@@ -95,38 +99,21 @@ export class OutputNumbersTokens {
       ) {
         this.allowedMask[tokenId] = true;
       }
-    });
+    }
   }
 
-  invoke(_: any, scores: TensorLike): TensorLike {
-    const inputArray = Array.from(scores.data);
-    const maskedScores = new Float32Array(inputArray.length);
+  _call(inputIds: bigint[][], logits: Tensor): Tensor {
+    const logitsData = new Float32Array(logits.data);
+    const shape = logits.dims;
 
-    for (let i = 0; i < inputArray.length; i++) {
-      maskedScores[i] = this.allowedMask[i] ? inputArray[i] : -Infinity;
+    for (let batchIdx = 0; batchIdx < inputIds.length; batchIdx++) {
+      for (let vocabIdx = 0; vocabIdx < this.vocabSize; vocabIdx++) {
+        if (!this.allowedMask[vocabIdx]) {
+          logitsData[batchIdx * this.vocabSize + vocabIdx] = -Infinity;
+        }
+      }
     }
 
-    return {
-      data: maskedScores,
-      dims: scores.dims,
-      shape: scores.shape,
-      get(index: number) {
-        return this.data[index];
-      },
-      slice(start: number, end?: number) {
-        const slicedData = Array.from(this.data).slice(start, end);
-        return {
-          data: new Float32Array(slicedData),
-          dims: [slicedData.length],
-          shape: [slicedData.length],
-          get(index: number) {
-            return this.data[index];
-          },
-          slice: this.slice,
-          length: slicedData.length,
-        };
-      },
-      length: maskedScores.length,
-    };
+    return new Tensor(logits.type, logitsData, shape);
   }
 }

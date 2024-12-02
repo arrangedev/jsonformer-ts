@@ -2,7 +2,7 @@ import {
   PreTrainedModel,
   PreTrainedTokenizer,
   Tensor,
-} from "@xenova/transformers";
+} from "@huggingface/transformers";
 import {
   NumberStoppingCriteria,
   OutputNumbersTokens,
@@ -74,27 +74,91 @@ export class Jsonformer {
     const prompt = this.getPrompt();
     this.debug("[generate_number]", prompt, true);
 
-    const inputTokens = this.tokenizer.encode(prompt, null, {
+    const inputTokens = this.tokenizer.encode(prompt, {
       add_special_tokens: true,
     });
 
     const inputData = inputTokens.map(BigInt);
+    const inputLength = inputTokens.length;
     const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
 
-    const response = await this.model.generate(inputTensor, {
-      max_new_tokens: this.options.maxNumberTokens,
-      num_return_sequences: 1,
-      logits_processor: this.numberLogitProcessor,
-      stopping_criteria: [
-        new NumberStoppingCriteria(this.tokenizer, inputTokens[0]),
-      ],
-      temperature: temperature || this.options.temperature,
-      pad_token_id: this.tokenizer.pad_token_id,
-      do_sample: true,
+    const attentionMask = new Tensor(
+      "int64",
+      new Array(inputLength).fill(BigInt(1)),
+      [1, inputLength],
+    );
+    const positionIds = new Tensor(
+      "int64",
+      Array.from({ length: inputLength }, (_, i) => BigInt(i)),
+      [1, inputLength],
+    );
+
+    const stoppingCriteria = new NumberStoppingCriteria(
+      this.tokenizer,
+      inputLength,
+    );
+
+    const stopOnNumber = (inputIds: bigint[][], _scores?: number[][]) => {
+      if (inputIds[0].length <= inputLength) {
+        return false;
+      }
+
+      const tokenIds = inputIds[0].slice(inputLength);
+      const decoded = this.tokenizer.decode(
+        Array.from(tokenIds).map((t) => Number(t)),
+        { skip_special_tokens: true },
+      );
+
+      // Check for multiple decimal points
+      if ((decoded.match(/\./g) || []).length > 1) {
+        return true;
+      }
+
+      // Stop if we have a number followed by space/newline
+      if (
+        decoded.length > 1 &&
+        /\d/.test(decoded) &&
+        [" ", "\n"].includes(decoded[decoded.length - 1])
+      ) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const response = await this.model.generate({
+      inputs: inputTensor,
+      attention_mask: attentionMask,
+      position_ids: positionIds,
+      generation_config: {
+        max_new_tokens: this.options.maxStringTokenLength,
+        num_return_sequences: 1,
+        pad_token_id: this.tokenizer.pad_token_id,
+        temperature: temperature || this.options.temperature,
+      },
+      logits_processor: [this.numberLogitProcessor],
+      stopping_criteria: [stopOnNumber],
     });
 
-    const newTokens = response[0].slice(inputTokens.length);
-    const result = this.tokenizer.decode(newTokens, {
+    let generatedTokens: bigint[];
+
+    if ("data" in response) {
+      generatedTokens = Array.from(response.data);
+    } else {
+      //@ts-ignore
+      generatedTokens = Array.from(response.output_ids.data);
+    }
+
+    if (
+      generatedTokens.length >= inputTokens.length &&
+      generatedTokens
+        .slice(0, inputTokens.length)
+        .every((token, i) => token === BigInt(inputTokens[i]))
+    ) {
+      generatedTokens = generatedTokens.slice(inputTokens.length);
+    }
+
+    const result = this.tokenizer.decode(generatedTokens, {
       skip_special_tokens: true,
     });
 
@@ -118,7 +182,7 @@ export class Jsonformer {
     const prompt = this.getPrompt();
     this.debug("[generate_boolean]", prompt, true);
 
-    const inputTokens = this.tokenizer.encode(prompt, null, {
+    const inputTokens = this.tokenizer.encode(prompt, {
       add_special_tokens: true,
       return_token_type_ids: true,
     });
@@ -140,10 +204,10 @@ export class Jsonformer {
     const logits = output.logits;
     const lastTokenLogits = logits.data.slice(-logits.dims[2]);
 
-    const trueTokens = this.tokenizer.encode("true", null, {
+    const trueTokens = this.tokenizer.encode("true", {
       add_special_tokens: false,
     });
-    const falseTokens = this.tokenizer.encode("false", null, {
+    const falseTokens = this.tokenizer.encode("false", {
       add_special_tokens: false,
     });
 
@@ -160,29 +224,63 @@ export class Jsonformer {
     const prompt = `${this.getPrompt()}"`;
     this.debug("[generate_string]", prompt, true);
 
-    const inputTokens = this.tokenizer.encode(prompt, null, {
-      add_special_tokens: true,
+    const inputTokens = this.tokenizer.encode(prompt, {
+      add_special_tokens: false,
     });
 
     const inputData = inputTokens.map(BigInt);
-    const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
+    const inputLength = inputTokens.length;
 
-    const response = await this.model.generate(inputTensor, {
-      max_new_tokens: this.options.maxStringTokenLength,
-      num_return_sequences: 1,
-      stopping_criteria: [
-        new StringStoppingCriteria(this.tokenizer, inputTokens[0]),
-      ],
-      temperature: this.options.temperature,
-      pad_token_id: this.tokenizer.pad_token_id,
-      do_sample: true,
+    const inputTensor = new Tensor("int64", inputData, [1, inputTokens.length]);
+    const attentionMask = new Tensor(
+      "int64",
+      new Array(inputLength).fill(BigInt(1)),
+      [1, inputLength],
+    );
+    const positionIds = new Tensor(
+      "int64",
+      Array.from({ length: inputLength }, (_, i) => BigInt(i)),
+      [1, inputLength],
+    );
+
+    const stoppingCriteria = new StringStoppingCriteria(
+      this.tokenizer,
+      inputLength,
+    );
+
+    const response = await this.model.generate({
+      inputs: inputTensor,
+      attention_mask: attentionMask,
+      position_ids: positionIds,
+      generation_config: {
+        max_new_tokens: this.options.maxStringTokenLength,
+        num_return_sequences: 1,
+        pad_token_id: this.tokenizer.pad_token_id,
+        temperature: this.options.temperature,
+        do_sample: true,
+      },
+      stopping_criteria: [stoppingCriteria],
     });
 
-    let finalResponse = response[0];
+    let generatedTokens: bigint[];
 
-    finalResponse = finalResponse.slice(inputTokens.length);
+    if ("data" in response) {
+      generatedTokens = Array.from(response.data);
+    } else {
+      //@ts-ignore
+      generatedTokens = Array.from(response.output_ids.data);
+    }
 
-    const decodedResponse = this.tokenizer.decode(finalResponse, {
+    if (
+      generatedTokens.length >= inputTokens.length &&
+      generatedTokens
+        .slice(0, inputTokens.length)
+        .every((token, i) => token === BigInt(inputTokens[i]))
+    ) {
+      generatedTokens = generatedTokens.slice(inputTokens.length);
+    }
+
+    const decodedResponse = this.tokenizer.decode(generatedTokens, {
       skip_special_tokens: true,
     });
 
@@ -288,7 +386,7 @@ export class Jsonformer {
       const inputPrompt = this.getPrompt();
       obj.pop();
 
-      const inputTokens = this.tokenizer.encode(inputPrompt, null, {
+      const inputTokens = this.tokenizer.encode(inputPrompt, {
         add_special_tokens: true,
         return_token_type_ids: true,
       });

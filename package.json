@@ -12,7 +12,7 @@
     "example:basic": "tsx examples/basic.ts"
   },
   "dependencies": {
-    "@xenova/transformers": "^2.15.0",
+    "@huggingface/transformers": "^3.1.0",
     "chalk": "^4.1.2"
   },
   "devDependencies": {
